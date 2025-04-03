@@ -1,4 +1,5 @@
 # Airflow Weather Data Collector
+![Apache Airflow](https://img.shields.io/badge/Apache_Airflow-017CEE?style=for-the-badge&logo=Apache%20Airflow&logoColor=white)
 
 ## Описание
 Проект для сбора данных о погоде в Минске с использованием Apache Airflow.
