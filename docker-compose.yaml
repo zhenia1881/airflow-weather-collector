@@ -1,0 +1,150 @@
+services:
+  postgres:
+    image: postgres:13-alpine
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres-db-volume:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 5s
+      retries: 5
+    platform: linux/amd64
+
+  redis:
+    image: redis:7-alpine
+    expose:
+      - 6379
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 30s
+      retries: 50
+    platform: linux/amd64
+
+  airflow-webserver:
+    image: apache/airflow:2.5.1-python3.9
+    platform: linux/amd64
+    restart: always
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - ./plugins:/opt/airflow/plugins
+      - ./data:/opt/airflow/data
+      - ./config/airflow.cfg:/opt/airflow/airflow.cfg
+      - ./requirements.txt:/requirements.txt
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=CeleryExecutor
+      - AIRFLOW__CORE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow
+      - AIRFLOW__CELERY__RESULT_BACKEND=db+postgresql://airflow:airflow@postgres/airflow
+      - AIRFLOW__CELERY__BROKER_URL=redis://redis:6379/0
+      - AIRFLOW__CORE__FERNET_KEY=${FERNET_KEY}
+      - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=true
+      - AIRFLOW__CORE__LOAD_EXAMPLES=false
+    ports:
+      - "8080:8080"
+    command: >
+      bash -c "
+      pip install --upgrade pip &&
+      pip install --no-cache-dir -r /requirements.txt &&
+      airflow webserver
+      "
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 120s  # Увеличьте до 120 секунд
+      start_period: 300s  # Добавьте этот параметр
+      retries: 10
+
+  airflow-scheduler:
+    image: apache/airflow:2.5.1-python3.9
+    platform: linux/amd64
+    restart: always
+    depends_on:
+      - postgres
+      - redis
+      - airflow-webserver
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - ./plugins:/opt/airflow/plugins
+      - ./data:/opt/airflow/data
+      - ./config/airflow.cfg:/opt/airflow/airflow.cfg
+      - ./requirements.txt:/requirements.txt
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=CeleryExecutor
+      - AIRFLOW__CORE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow
+      - AIRFLOW__CELERY__RESULT_BACKEND=db+postgresql://airflow:airflow@postgres/airflow
+      - AIRFLOW__CELERY__BROKER_URL=redis://redis:6379/0
+      - AIRFLOW__CORE__FERNET_KEY=${FERNET_KEY}
+    command: >
+      bash -c "
+      pip install --upgrade pip &&
+      pip install --no-cache-dir -r /requirements.txt &&
+      airflow scheduler
+      "
+
+  airflow-worker:
+    image: apache/airflow:2.5.1-python3.9
+    platform: linux/amd64
+    restart: always
+    depends_on:
+      - postgres
+      - redis
+      - airflow-scheduler
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - ./plugins:/opt/airflow/plugins
+      - ./data:/opt/airflow/data
+      - ./config/airflow.cfg:/opt/airflow/airflow.cfg
+      - ./requirements.txt:/requirements.txt
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=CeleryExecutor
+      - AIRFLOW__CORE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow
+      - AIRFLOW__CELERY__RESULT_BACKEND=db+postgresql://airflow:airflow@postgres/airflow
+      - AIRFLOW__CELERY__BROKER_URL=redis://redis:6379/0
+      - AIRFLOW__CORE__FERNET_KEY=${FERNET_KEY}
+    command: >
+      bash -c "
+      pip install --upgrade pip &&
+      pip install --no-cache-dir -r /requirements.txt &&
+      celery --app airflow.executors.celery_executor.app worker
+      "
+
+  airflow-init:
+    image: apache/airflow:2.5.1-python3.9
+    platform: linux/amd64
+    depends_on:
+      - postgres
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=CeleryExecutor
+      - AIRFLOW__CORE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow
+      - AIRFLOW__CELERY__RESULT_BACKEND=db+postgresql://airflow:airflow@postgres/airflow
+      - AIRFLOW__CELERY__BROKER_URL=redis://redis:6379/0
+      - AIRFLOW__CORE__FERNET_KEY=${FERNET_KEY}
+      - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=true
+      - AIRFLOW__CORE__LOAD_EXAMPLES=false
+      - OPENWEATHERMAP_API_KEY=${OPENWEATHERMAP_API_KEY}
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - ./plugins:/opt/airflow/plugins
+      - ./data:/opt/airflow/data
+      - ./config/airflow.cfg:/opt/airflow/airflow.cfg
+      - ./requirements.txt:/requirements.txt
+    command: >
+      bash -c "
+      pip install --upgrade pip &&
+      pip install --no-cache-dir -r /requirements.txt &&
+      airflow db init &&
+      airflow users create --username admin --firstname Admin --lastname User --role Admin --email admin@example.com --password admin &&
+      airflow connections add openweathermap --conn-type http --conn-host 'api.openweathermap.org' --conn-password $${OPENWEATHERMAP_API_KEY}
+      "
+volumes:
+  postgres-db-volume:
