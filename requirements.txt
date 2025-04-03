@@ -1,5 +1,6 @@
-cryptography==44.0.0
-pandas==2.1.4
-pyarrow==14.0.2
-apache-airflow-providers-http==4.5.0
-apache-airflow[postgres,celery]==2.5.1
+# apache-airflow-providers-google
+# pyarrow
+
+pandas
+requests
+dotenv
